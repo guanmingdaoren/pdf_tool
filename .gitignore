@@ -1,0 +1,49 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build and packaging outputs
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Generated PDF outputs from this tool
+merged*.pdf
+*_compressed.pdf
+*_split.pdf
+*_page*.pdf

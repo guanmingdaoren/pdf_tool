@@ -13,6 +13,7 @@ import subprocess
 from PIL import Image
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from pdf_file_utils import collect_relative_files, make_unique_path, resolve_ghostscript_command
 
 class MergeThread(QThread):
     status_update = Signal(str, str)  # message, color
@@ -46,7 +47,7 @@ class MergeThread(QThread):
 
             if self.compress_after_merge:
                 self.status_update.emit("合并完成，开始压缩...", "blue")
-                compressed_path = os.path.splitext(self.output_path)[0] + "_compressed.pdf"
+                compressed_path = make_unique_path(os.path.splitext(self.output_path)[0] + "_compressed.pdf")
                 self.compress_pdf(self.output_path, compressed_path)
                 self.output_path = compressed_path
 
@@ -61,7 +62,7 @@ class MergeThread(QThread):
     def compress_pdf(self, input_pdf, output_pdf):
         try:
             gs_command = [
-                "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
+                resolve_ghostscript_command(), "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
                 f"-dPDFSETTINGS=/ebook", "-dNOPAUSE", "-dQUIET", "-dBATCH",
                 f"-sOutputFile={output_pdf}", input_pdf
             ]
@@ -83,7 +84,7 @@ class CompressThread(QThread):
     def run(self):
         try:
             gs_command = [
-                "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
+                resolve_ghostscript_command(), "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
                 f"-dPDFSETTINGS={self.compression_level}", "-dNOPAUSE", "-dQUIET", "-dBATCH",
                 f"-sOutputFile={self.output_path}", self.input_path
             ]
@@ -127,7 +128,7 @@ class ConversionThread(QThread):
         try:
             for file_name in self.file_list:
                 input_path = os.path.join(self.folder, file_name)
-                output_pdf = os.path.join(self.output_dir, os.path.splitext(file_name)[0] + ".pdf")
+                output_pdf = make_unique_path(os.path.join(self.output_dir, os.path.splitext(os.path.basename(file_name))[0] + ".pdf"))
                 
                 if file_name.lower().endswith('.pdf'):
                     # 如果已经是PDF，直接复制
@@ -199,7 +200,7 @@ class SplitThread(QThread):
                     for page_num in range(1, total_pages + 1):
                         writer = PdfWriter()
                         writer.add_page(reader.pages[page_num - 1])
-                        output_pdf = os.path.join(self.output_dir, f"{base_name}_page{page_num}.pdf")
+                        output_pdf = make_unique_path(os.path.join(self.output_dir, f"{base_name}_page{page_num}.pdf"))
                         with open(output_pdf, 'wb') as out_file:
                             writer.write(out_file)
                         self.status_update.emit(f"拆分页面 {page_num}/{total_pages}", "blue")
@@ -210,7 +211,7 @@ class SplitThread(QThread):
                     writer = PdfWriter()
                     for page_num in pages:
                         writer.add_page(reader.pages[page_num - 1])
-                    output_pdf = os.path.join(self.output_dir, f"{base_name}_split.pdf")
+                    output_pdf = make_unique_path(os.path.join(self.output_dir, f"{base_name}_split.pdf"))
                     with open(output_pdf, 'wb') as out_file:
                         writer.write(out_file)
                     self.status_update.emit(f"拆分指定范围: {self.page_ranges}", "blue")
@@ -246,6 +247,7 @@ class PDFMergerApp(QMainWindow):
         self.setWindowTitle("PDF 文件处理工具")
         self.setGeometry(900, 400, 900, 700)
         self.setMinimumSize(800, 600)
+        self.apply_app_style()
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -273,6 +275,7 @@ class PDFMergerApp(QMainWindow):
         self.tab_widget.addTab(self.split_tab, "PDF拆分")
 
         self.status_label = QLabel("就绪")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setStyleSheet("color: green;")
         main_layout.addWidget(self.status_label)
 
@@ -280,6 +283,109 @@ class PDFMergerApp(QMainWindow):
         self.compress_output_directory = None
         self.convert_output_directory = None
         self.split_output_directory = None  # NEW
+
+    def apply_app_style(self):
+        self.setStyleSheet("""
+            QMainWindow {
+                background: #f5f7fb;
+            }
+            QWidget {
+                font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+                font-size: 13px;
+                color: #202938;
+            }
+            QTabWidget::pane {
+                border: 1px solid #d8dee9;
+                border-radius: 6px;
+                background: #ffffff;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #e8edf5;
+                border: 1px solid #d8dee9;
+                border-bottom: none;
+                padding: 9px 18px;
+                margin-right: 4px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #1450a3;
+                font-weight: 600;
+            }
+            QGroupBox {
+                border: 1px solid #d8dee9;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding: 14px 12px 12px 12px;
+                background: #ffffff;
+                font-weight: 600;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+                color: #405168;
+            }
+            QLineEdit {
+                min-height: 30px;
+                border: 1px solid #c7d0df;
+                border-radius: 5px;
+                padding: 4px 8px;
+                background: #ffffff;
+            }
+            QLineEdit:focus {
+                border-color: #2f73d8;
+            }
+            QPushButton {
+                min-height: 30px;
+                border: 1px solid #b8c4d5;
+                border-radius: 5px;
+                padding: 5px 14px;
+                background: #ffffff;
+            }
+            QPushButton:hover {
+                background: #eef5ff;
+                border-color: #7ea9e8;
+            }
+            QPushButton:disabled {
+                color: #95a1b2;
+                background: #eef1f5;
+            }
+            QPushButton#primaryButton {
+                color: #ffffff;
+                background: #1d5fbf;
+                border-color: #1d5fbf;
+                font-weight: 600;
+            }
+            QPushButton#primaryButton:hover {
+                background: #174fa3;
+            }
+            QListWidget {
+                border: 1px solid #d8dee9;
+                border-radius: 5px;
+                background: #fbfcff;
+                padding: 4px;
+            }
+            QProgressBar {
+                min-height: 8px;
+                max-height: 8px;
+                border: none;
+                border-radius: 4px;
+                background: #e2e8f0;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                border-radius: 4px;
+                background: #2f73d8;
+            }
+            QLabel#statusLabel {
+                padding: 8px 10px;
+                border-radius: 5px;
+                background: #eef7ee;
+            }
+        """)
 
     def setup_merge_tab(self):
         layout = QVBoxLayout(self.merge_tab)
@@ -292,11 +398,15 @@ class PDFMergerApp(QMainWindow):
         folder_group = QGroupBox("选择包含PDF的文件夹")
         folder_layout = QVBoxLayout(folder_group)
         self.folder_path = QLineEdit()
+        self.folder_path.setPlaceholderText("选择一个文件夹，可只加载当前目录或遍历所有子文件夹")
         browse_folder_btn = QPushButton("浏览")
         browse_folder_btn.clicked.connect(self.browse_folder)
+        recursive_folder_btn = QPushButton("遍历子文件夹")
+        recursive_folder_btn.clicked.connect(self.load_pdf_files_recursive)
         h_layout = QHBoxLayout()
         h_layout.addWidget(self.folder_path)
         h_layout.addWidget(browse_folder_btn)
+        h_layout.addWidget(recursive_folder_btn)
         folder_layout.addLayout(h_layout)
         layout.addWidget(folder_group)
 
@@ -325,6 +435,7 @@ class PDFMergerApp(QMainWindow):
         output_group = QGroupBox("输出文件路径")
         output_layout = QVBoxLayout(output_group)
         self.output_name = QLineEdit()
+        self.output_name.setPlaceholderText("例如：merged.pdf，若已存在会自动生成 merged(1).pdf")
         choose_save_btn = QPushButton("选择保存位置")
         choose_save_btn.clicked.connect(self.choose_save_location)
         h_layout = QHBoxLayout()
@@ -339,9 +450,11 @@ class PDFMergerApp(QMainWindow):
 
         self.merge_progress = QProgressBar()
         self.merge_progress.setRange(0, 0)  # Indeterminate
+        self.merge_progress.setVisible(False)
         layout.addWidget(self.merge_progress)
 
         merge_btn = QPushButton("合并PDF文件")
+        merge_btn.setObjectName("primaryButton")
         merge_btn.clicked.connect(self.start_merge)
         layout.addWidget(merge_btn)
         self.merge_btn = merge_btn
@@ -357,6 +470,7 @@ class PDFMergerApp(QMainWindow):
         file_group = QGroupBox("选择要压缩的PDF文件")
         file_layout = QVBoxLayout(file_group)
         self.compress_input_path = QLineEdit()
+        self.compress_input_path.setPlaceholderText("选择要压缩的 PDF 文件")
         browse_input_btn = QPushButton("浏览")
         browse_input_btn.clicked.connect(self.browse_compress_input)
         h_layout = QHBoxLayout()
@@ -369,6 +483,7 @@ class PDFMergerApp(QMainWindow):
         output_group = QGroupBox("输出文件路径")
         output_layout = QVBoxLayout(output_group)
         self.compress_output_path = QLineEdit()  # MODIFIED: 初始为空，显示完整路径
+        self.compress_output_path.setPlaceholderText("同名文件已存在时会自动递增")
         choose_output_btn = QPushButton("选择保存位置")
         choose_output_btn.clicked.connect(self.choose_compress_output)
         h_layout = QHBoxLayout()
@@ -408,9 +523,11 @@ class PDFMergerApp(QMainWindow):
 
         self.compress_progress = QProgressBar()
         self.compress_progress.setRange(0, 0)  # Indeterminate
+        self.compress_progress.setVisible(False)
         layout.addWidget(self.compress_progress)
 
         compress_btn = QPushButton("压缩PDF文件")
+        compress_btn.setObjectName("primaryButton")
         compress_btn.clicked.connect(self.start_compress)
         layout.addWidget(compress_btn)
         self.compress_btn = compress_btn
@@ -426,11 +543,15 @@ class PDFMergerApp(QMainWindow):
         folder_group = QGroupBox("选择包含文件的文件夹")
         folder_layout = QVBoxLayout(folder_group)
         self.convert_folder_path = QLineEdit()
+        self.convert_folder_path.setPlaceholderText("选择包含图片或文本文件的文件夹")
         browse_convert_folder_btn = QPushButton("浏览")
         browse_convert_folder_btn.clicked.connect(self.browse_convert_folder)
+        recursive_convert_btn = QPushButton("遍历子文件夹")
+        recursive_convert_btn.clicked.connect(self.load_convert_files_recursive)
         h_layout = QHBoxLayout()
         h_layout.addWidget(self.convert_folder_path)
         h_layout.addWidget(browse_convert_folder_btn)
+        h_layout.addWidget(recursive_convert_btn)
         folder_layout.addLayout(h_layout)
         layout.addWidget(folder_group)
 
@@ -453,6 +574,7 @@ class PDFMergerApp(QMainWindow):
         output_group = QGroupBox("输出目录")
         output_layout = QVBoxLayout(output_group)
         self.convert_output_path = QLineEdit()
+        self.convert_output_path.setPlaceholderText("转换结果输出目录")
         choose_convert_output_btn = QPushButton("选择目录")
         choose_convert_output_btn.clicked.connect(self.choose_convert_output)
         h_layout = QHBoxLayout()
@@ -467,9 +589,11 @@ class PDFMergerApp(QMainWindow):
 
         self.convert_progress = QProgressBar()
         self.convert_progress.setRange(0, 0)  # Indeterminate
+        self.convert_progress.setVisible(False)
         layout.addWidget(self.convert_progress)
 
         convert_btn = QPushButton("开始转换")
+        convert_btn.setObjectName("primaryButton")
         convert_btn.clicked.connect(self.start_convert)
         layout.addWidget(convert_btn)
         self.convert_btn = convert_btn
@@ -486,6 +610,7 @@ class PDFMergerApp(QMainWindow):
         file_group = QGroupBox("选择要拆分的PDF文件")
         file_layout = QVBoxLayout(file_group)
         self.split_input_path = QLineEdit()
+        self.split_input_path.setPlaceholderText("选择要拆分的 PDF 文件")
         browse_split_input_btn = QPushButton("浏览")
         browse_split_input_btn.clicked.connect(self.browse_split_input)
         h_layout = QHBoxLayout()
@@ -497,6 +622,7 @@ class PDFMergerApp(QMainWindow):
         output_group = QGroupBox("输出目录")
         output_layout = QVBoxLayout(output_group)
         self.split_output_path = QLineEdit()
+        self.split_output_path.setPlaceholderText("拆分结果输出目录")
         choose_split_output_btn = QPushButton("选择目录")
         choose_split_output_btn.clicked.connect(self.choose_split_output)
         h_layout = QHBoxLayout()
@@ -525,14 +651,17 @@ class PDFMergerApp(QMainWindow):
         ranges_group = QGroupBox("页码范围 (仅在指定模式下有效)")
         ranges_layout = QVBoxLayout(ranges_group)
         self.page_ranges = QLineEdit()
+        self.page_ranges.setPlaceholderText("例如：2-10,12,15-20")
         ranges_layout.addWidget(self.page_ranges)
         layout.addWidget(ranges_group)
 
         self.split_progress = QProgressBar()
         self.split_progress.setRange(0, 0)  # Indeterminate
+        self.split_progress.setVisible(False)
         layout.addWidget(self.split_progress)
 
         split_btn = QPushButton("开始拆分")
+        split_btn.setObjectName("primaryButton")
         split_btn.clicked.connect(self.start_split)
         layout.addWidget(split_btn)
         self.split_btn = split_btn
@@ -553,7 +682,7 @@ class PDFMergerApp(QMainWindow):
         if folder:
             self.folder_path.setText(folder)
             self.output_directory = folder
-            default_path = os.path.join(folder, "merged.pdf")
+            default_path = make_unique_path(os.path.join(folder, "merged.pdf"))
             self.output_name.setText(default_path)
             self.load_pdf_files()
 
@@ -564,12 +693,12 @@ class PDFMergerApp(QMainWindow):
             directory, filename = os.path.split(file_path)
             name, ext = os.path.splitext(filename)
             # MODIFIED: 设置完整输出路径
-            default_output_path = os.path.join(directory, f"{name}_compressed{ext}")
+            default_output_path = make_unique_path(os.path.join(directory, f"{name}_compressed{ext}"))
             self.compress_output_path.setText(default_output_path)
             self.compress_output_directory = directory
 
     def choose_save_location(self):
-        default_file = os.path.join(self.output_directory or os.path.expanduser("~"), "merged.pdf")
+        default_file = self.output_name.text().strip() or make_unique_path(os.path.join(self.output_directory or os.path.expanduser("~"), "merged.pdf"))
         file_path, _ = QFileDialog.getSaveFileName(self, "选择保存位置", default_file, "PDF files (*.pdf);;All files (*.*)")
         if file_path:
             self.output_name.setText(file_path)
@@ -583,24 +712,30 @@ class PDFMergerApp(QMainWindow):
             self.compress_output_path.setText(file_path)
             self.compress_output_directory = os.path.dirname(file_path)
 
-    def load_pdf_files(self):
+    def load_pdf_files(self, recursive=False):
         self.list_widget.clear()
         folder = self.folder_path.text()
         if not os.path.isdir(folder):
             return
 
-        pdf_files = [f for f in os.listdir(folder) if f.lower().endswith('.pdf')]
-        pdf_files.sort()
+        pdf_files = collect_relative_files(folder, ('.pdf',), recursive=recursive)
 
         for pdf in pdf_files:
             self.list_widget.addItem(pdf)
 
         if pdf_files:
-            self.status_label.setText(f"找到 {len(pdf_files)} 个PDF文件")
+            scope = "当前文件夹及子文件夹" if recursive else "当前文件夹"
+            self.status_label.setText(f"{scope}找到 {len(pdf_files)} 个PDF文件")
             self.status_label.setStyleSheet("color: green;")
         else:
             self.status_label.setText("未找到PDF文件")
             self.status_label.setStyleSheet("color: red;")
+
+    def load_pdf_files_recursive(self):
+        if not os.path.isdir(self.folder_path.text()):
+            QMessageBox.critical(self, "错误", "请先选择有效的文件夹")
+            return
+        self.load_pdf_files(recursive=True)
 
     def browse_convert_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "选择包含文件的文件夹")
@@ -610,25 +745,31 @@ class PDFMergerApp(QMainWindow):
             self.convert_output_path.setText(folder)
             self.load_convert_files()
 
-    def load_convert_files(self):
+    def load_convert_files(self, recursive=False):
         self.convert_list_widget.clear()
         folder = self.convert_folder_path.text()
         if not os.path.isdir(folder):
             return
 
         supported_ext = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.txt', '.md')
-        files = [f for f in os.listdir(folder) if f.lower().endswith(supported_ext)]
-        files.sort()
+        files = collect_relative_files(folder, supported_ext, recursive=recursive)
 
         for file in files:
             self.convert_list_widget.addItem(file)
 
         if files:
-            self.status_label.setText(f"找到 {len(files)} 个支持的文件")
+            scope = "当前文件夹及子文件夹" if recursive else "当前文件夹"
+            self.status_label.setText(f"{scope}找到 {len(files)} 个支持的文件")
             self.status_label.setStyleSheet("color: green;")
         else:
             self.status_label.setText("未找到支持的文件")
             self.status_label.setStyleSheet("color: red;")
+
+    def load_convert_files_recursive(self):
+        if not os.path.isdir(self.convert_folder_path.text()):
+            QMessageBox.critical(self, "错误", "请先选择有效的文件夹")
+            return
+        self.load_convert_files(recursive=True)
 
     def choose_convert_output(self):
         directory = QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -714,10 +855,8 @@ class PDFMergerApp(QMainWindow):
             QMessageBox.critical(self, "错误", "输出目录无效")
             return
 
-        if os.path.exists(output_path):
-            reply = QMessageBox.question(self, "确认", "输出文件已存在，是否覆盖？", QMessageBox.Yes | QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
+        output_path = make_unique_path(output_path)
+        self.output_name.setText(output_path)
 
         self.merge_btn.setEnabled(False)
         self.merge_progress.setVisible(True)
@@ -736,11 +875,12 @@ class PDFMergerApp(QMainWindow):
             QMessageBox.critical(self, "错误", "没有文件可转换")
             return
 
-        if self.convert_output_directory is None:
-            self.convert_output_directory = self.convert_folder_path.text()
-            if not self.convert_output_directory:
-                QMessageBox.critical(self, "错误", "请先选择文件夹或指定输出目录")
-                return
+        output_dir = self.convert_output_path.text().strip() or self.convert_output_directory or self.convert_folder_path.text()
+        if not output_dir or not os.path.isdir(output_dir):
+            QMessageBox.critical(self, "错误", "请先选择有效的输出目录")
+            return
+        self.convert_output_directory = output_dir
+        self.convert_output_path.setText(output_dir)
 
         self.convert_btn.setEnabled(False)
         self.convert_progress.setVisible(True)
@@ -761,11 +901,12 @@ class PDFMergerApp(QMainWindow):
             QMessageBox.critical(self, "错误", "请选择有效的PDF文件")
             return
 
-        if self.split_output_directory is None:
-            self.split_output_directory = os.path.dirname(input_path)
-            if not self.split_output_directory:
-                QMessageBox.critical(self, "错误", "无法确定输出目录")
-                return
+        output_dir = self.split_output_path.text().strip() or self.split_output_directory or os.path.dirname(input_path)
+        if not output_dir or not os.path.isdir(output_dir):
+            QMessageBox.critical(self, "错误", "请选择有效的输出目录")
+            return
+        self.split_output_directory = output_dir
+        self.split_output_path.setText(output_dir)
 
         page_ranges = None
         if self.split_mode == 'ranges':
@@ -819,10 +960,8 @@ class PDFMergerApp(QMainWindow):
             QMessageBox.critical(self, "错误", "输出目录无效")
             return
 
-        if os.path.exists(output_path):
-            reply = QMessageBox.question(self, "确认", "输出文件已存在，是否覆盖？", QMessageBox.Yes | QMessageBox.No)
-            if reply != QMessageBox.Yes:
-                return
+        output_path = make_unique_path(output_path)
+        self.compress_output_path.setText(output_path)
 
         try:
             target_size_mb = float(self.target_size.text())
