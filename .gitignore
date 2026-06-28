@@ -41,6 +41,7 @@ dist/
 *.log
 *.tmp
 *.temp
+tmp/
 
 # Generated PDF outputs from this tool
 merged*.pdf

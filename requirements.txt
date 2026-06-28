@@ -1,0 +1,6 @@
+PySide6
+PyPDF2
+Pillow
+reportlab
+PyMuPDF
+ImageHash
